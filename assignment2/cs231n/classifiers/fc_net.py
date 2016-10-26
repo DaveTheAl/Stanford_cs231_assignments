@@ -195,19 +195,42 @@ class FullyConnectedNet(object):
 
     #{affine - [batch norm] - relu - [dropout]} x (L - 1) - affine - softmax
 
-    #vorsicht... vorsicht... das wird schiefgehen, aber bisdahin abwarten
-    for i in xrange(self.num_layers-1):
-      self.params['W%d' % i] = np.random.normal(scale=weight_scale, size=(input_dim, hidden_dims))
-      self.params['b%d' % i] = np.zeros(hidden_dims)
-        #initialization, so no need to highly optimized...  (putting if away from for loop
+    self.L = len(hidden_dims) + 1
+    self.N = input_dim
+    self.C = num_classes
 
-    self.params['W%d' % (self.num_layers)] = np.random.normal(scale = weight_scale, size=(input_dim, num_classes)) if self.num_layers == 1 else \
-                                        np.random.normal(scale = weight_scale, size=(hidden_dims, num_classes))
-    self.params['b%d' % (self.num_layers)] = np.zeros(num_classes)
+    dims = [input_dim] + hidden_dims + [num_classes]
+
+    Ws = {'W' + str(i + 1):
+              weight_scale * np.random.randn(dims[i], dims[i + 1]) for i in range(len(dims) - 1)}
+    b = {'b' + str(i + 1): np.zeros(dims[i + 1]) for i in range(len(dims) - 1)}
+
+    self.params.update(b)
+    self.params.update(Ws)
 
     ############################################################################
     #                             END OF YOUR CODE                             #
     ############################################################################
+
+    #vorsicht... vorsicht... das wird schiefgehen, aber bisdahin abwarten
+    # print
+    # print "HEYHO!"
+    # print type(input_dim)
+    # print type(num_classes)
+    # print type(hidden_dims[0])
+    # print len(hidden_dims)
+    # print self.num_layers
+
+    # L = self.num_layers
+    # self.input_dim = input_dim
+    # self.num_classes = num_classes
+    # dim_arr = [input_dim] + hidden_dims + [num_classes]
+    #
+    # for i in xrange(1, L-1):          #because counting starts from 0
+    #   self.params['W%d' % i] = np.random.randn(dim_arr[i], dim_arr[i+1]) * weight_scale
+    #   self.params['b%d' % i] = np.zeros(dim_arr[i+1])
+        #initialization, so no need to highly optimized...  (putting if away from for loop
+
 
     # When using dropout we need to pass a dropout_param dictionary to each
     # dropout layer so that the layer knows the dropout probability and the mode
@@ -225,8 +248,16 @@ class FullyConnectedNet(object):
     # pass of the second batch normalization layer, etc.
     self.bn_params = []
     if self.use_batchnorm:
-      self.bn_params = [{'mode': 'train'} for i in xrange(self.num_layers - 1)]
-    
+      self.bn_params = {'bn_param' + str(i+1): {'mode': 'train',
+                                                'running_mean': np.zeros(dims[i + 1]),
+                                                'running_var': np.zeros(dims[i + 1])
+                                                }
+                        for i in xrange(len(dims) - 2)}
+      gamma = {'gamma' + str(i+1): np.ones(dims[i + 1]) for i in xrange(len(dims) - 2)}
+      beta = {'beta' + str(i+1): np.ones(dims[i + 1]) for i in xrange(len(dims) - 2)}
+
+      self.params.update(beta)
+      self.params.update(gamma)
     # Cast all parameters to the correct datatype
     for k, v in self.params.iteritems():
       self.params[k] = v.astype(dtype)
@@ -246,7 +277,7 @@ class FullyConnectedNet(object):
     if self.dropout_param is not None:
       self.dropout_param['mode'] = mode   
     if self.use_batchnorm:
-      for bn_param in self.bn_params:
+      for key, bn_param in self.bn_params.iteritems():
         bn_param[mode] = mode
 
     scores = None
@@ -265,30 +296,121 @@ class FullyConnectedNet(object):
 
 
     #Second try guys
-    
+
+
+    hidden = {}
+    hidden['h0'] = X.reshape(X.shape[0], np.prod(X.shape[1:]))
+
+    for i in range(self.L):
+      idx = i + 1
+      # Naming of the variable
+      w = self.params['W' + str(idx)]
+      b = self.params['b' + str(idx)]
+      h = hidden['h' + str(idx - 1)]
+
+      if idx == self.L:
+        h, cache_h = affine_forward(h, w, b)
+        hidden['h' + str(idx)] = h
+        hidden['cache_h' + str(idx)] = cache_h
+      else:
+        if self.use_batchnorm:
+          gamma = self.params['gamma' + str(idx)]
+          beta = self.params['beta' + str(idx)]
+          bn_param = self.bn_params['bn_param' + str(idx)]
+
+          h, cache_h = affine_norm_relu_forward(h, w, b, gamma, beta, bn_param)
+          hidden['h' + str(idx)] = h
+          hidden['cache_h' + str(idx)] = cache_h
+        else:
+          h, cache_h = affine_relu_forward(h, w, b)
+          hidden['h' + str(idx)] = h
+          hidden['cache_h' + str(idx)] = cache_h
+
+    scores = hidden['h' + str(self.L)]
 
     #{affine - [batch norm] - relu - [dropout]} x (L - 1) - affine - softmax
 
-    out_a = []
-    out_r = []
-    cache_a = []
-    cache_r = []
-    dx_a = []
-    dx_r = []
+    # out_a = [None] * self.num_layers
+    # out_r = [None] * self.num_layers
+    # cache_a = [None] * self.num_layers
+    # cache_r = [None] * self.num_layers
+    # arr_a = ()
+    # arr_cache = ()
+    # dx_a = [None] * self.num_layers
+    # dx_r = [None] * self.num_layers
+    #
+    # L = self.num_layers
+    # out = [None] * self.num_layers    #check how many times we will actually propagate this through
+    # cache = [None] * self.num_layers
 
+
+    # layer = {}
+    # layer[0] = X
+    # cache_layer = {}
+    #
+    # for i in xrange(1, self.num_layers):
+    #   layer[i], cache_layer[i] = affine_relu_forward(layer[i - 1],
+    #                                                  self.params['W%d' % i],
+    #                                                  self.params['b%d' % i])
+    # #
 
     #forward propagating through all gates
-    out_a[0], cache_a[0] = affine_forward(X, self.params['W%d' % (0)], self.params['b%d' % (0)])
-    out_r[0], cache_r[0] = relu_forward(out_a[0])
+    #it now feels right.....
+    # print 'Getting into the stuff'
+    # hidden = {}
+    # hidden['h0'] = X.reshape(X.shape[0], np.prod(X.shape[1:]))
+    #
+    # for i in xrange(L):
+    #   idx = i + 1
+    #   w = self.params['W%d' % (idx)]
+    #   b = self.params['b%d' % (idx)]
+    #   h = hidden['h' + str(idx - 1)]
+    #   if idx == L:
+    #     h, cache_h = affine_forward(h, w, b)
+    #     hidden['h' + str(idx)] = h
+    #     hidden['cache_h' + str(idx)] = cache_h
+    #   else:
+    #     h, cache_h = affine_relu_forward(h, w, b)
+    #     hidden['h' + str(idx)] = h
+    #     hidden['cache_h' + str(idx)] = cache_h
 
-    for i in xrange(1, self.num_layers-1):
-      out_a[i], cache_a[i] = affine_forward(out_a[i-1], self.params['W%d' % (i)], self.params['b%d' % (i)])
-      out_r[i], cache_r[i] = relu_forward(out_a[i])
 
-    out_a[self.num_layers],  cache_a[self.num_layers] = affine_forward(out_a[self.num_layers - 1], self.params['W%d' % (self.num_layers)], self.params['b%d' % (self.num_layers)])  #supposed to be the very last forward propagation
+
+    # out[0] = np.reshape(X, (X.shape[0], np.prod(X.shape[1:])) )
+    # cache[0] = [None]
+    # print L
+    # for i in xrange(L-1):        #should this be only this many times? THis should be 2, because indexing starts at 0, and we have num_layers-1 layers in the hidden unit
+    #   out[i+1], cache[i+1] = affine_relu_forward(out[i], self.params['W%d' % i], self.params['b%d' % i])
+    #   print 'These two must be compatible'
+    #   print self.params['W%d' % i].shape
+    #   print self.params['W%d' % (i+1)].shape
+    #   print 'These two must be compatible'
+    #   print self.params['b%d' % i].shape
+    #   print self.params['b%d' % (i+1)].shape
+    #
+    # out[L], cache[L] = affine_forward(out[L-2], self.params['W%d' % (L-1)], self.params['W%d' % (L-1)])   #L-1 because we start counting at 0
+
+
+    # out_a[0], cache_a[0] = affine_forward(X, self.params['W%d' % 0], self.params['b%d' % 0])
+    # out_r[0], cache_r[0] = relu_forward(out_a[0])
+
+    # print "HEY"
+    # for i in xrange(1, self.num_layers-1):
+    #   print i
+    #   out_a[i], cache_a[i] = affine_forward(out_r[i-1], self.params['W%d' % (i)], self.params['b%d' % (i)])
+    #   out_r[i], cache_r[i] = relu_forward(out_a[i])
+    #
+    # out_a[self.num_layers],  cache_a[self.num_layers] = affine_forward(out_a[self.num_layers - 1], self.params['W%d' % (self.num_layers)], self.params['b%d' % (self.num_layers)])  #supposed to be the very last forward propagation
+
+
+    # WLast = 'W%d' % self.num_layers
+    # bLast = 'b%d' % self.num_layers
+    # scores, cache_scores = affine_forward(layer[-1],
+    #                                       self.params[WLast],
+    #                                       self.params[bLast])
 
     #softmax loss if y is not none
-    scores = out_a[self.num_layers]
+    # scores = out_a[self.num_layers]
     if y is None:
       return scores
 
@@ -302,7 +424,7 @@ class FullyConnectedNet(object):
 
     loss, grads = 0.0, {}
 
-    loss, dx_a[self.num_layers] = softmax_loss(scores, y)     #second value should be dout
+    # loss, dx_a[self.num_layers] = softmax_loss(scores, y)     #second value should be dout
     ############################################################################
     # TODO: Implement the backward pass for the fully-connected net. Store the #
     # loss in the loss variable and gradients in the grads dictionary. Compute #
@@ -316,6 +438,54 @@ class FullyConnectedNet(object):
     # automated tests, make sure that your L2 regularization includes a factor #
     # of 0.5 to simplify the expression for the gradient.                      #
     ############################################################################
+
+    #Second try guys
+
+    # Computing of the loss
+    data_loss, dscores = softmax_loss(scores, y)
+    reg_loss = 0
+    for w in [self.params[f] for f in self.params.keys() if f[0] == 'W']: reg_loss += 0.5 * self.reg * np.sum(w * w)
+
+    loss = data_loss + reg_loss
+
+    hidden['dh' + str(self.L)] = dscores
+    for i in range(self.L)[::-1]:
+      idx = i + 1
+      dh = hidden['dh' + str(idx)]
+      h_cache = hidden['cache_h' + str(idx)]
+      if idx == self.L:
+        dh, dw, db = affine_backward(dh, h_cache)
+        hidden['dh' + str(idx - 1)] = dh
+        hidden['dW' + str(idx)] = dw
+        hidden['db' + str(idx)] = db
+      else:
+        if self.use_batchnorm:
+
+          dh, dw, db, dgamma, dbeta= affine_norm_relu_backward(dh, h_cache)
+          hidden['dh' + str(idx - 1)] = dh
+          hidden['dW' + str(idx)] = dw
+          hidden['db' + str(idx)] = db
+          hidden['dgamma' + str(idx)] = dgamma
+          hidden['dbeta' + str(idx)] = dbeta
+
+        else:
+          dh, dw, db = affine_relu_backward(dh, h_cache)
+          hidden['dh' + str(idx - 1)] = dh
+          hidden['dW' + str(idx)] = dw
+          hidden['db' + str(idx)] = db
+
+    list_dw = {key[1:]: val + self.reg * self.params[key[1:]] for key, val in hidden.iteritems() if key[:2] == 'dW'}
+    # Paramerters b
+    list_db = {key[1:]: val for key, val in hidden.iteritems() if key[:2] == 'db'}
+    list_dgamma = {key[1:]: val for key, val in hidden.iteritems() if key[:6] == 'dgamma'}
+    # Paramters beta
+    list_dbeta = {key[1:]: val for key, val in hidden.iteritems() if key[:5] == 'dbeta'}
+
+    grads = {}
+    grads.update(list_dw)
+    grads.update(list_db)
+    grads.update(list_dgamma)
+    grads.update(list_dbeta)
 
     #forward propagating through all gates
     # out_a[0], cache_a[0] = affine_forward(X, self.params['W' + str(0)], self.params['b' + str(0) ])
@@ -332,11 +502,11 @@ class FullyConnectedNet(object):
 
 
     #should it be dx_a[self.num_layers] or dx_a[self.num_layers - 1]
-    dx_a[self.num_layers-1], grads['W%d' % (self.num_layers)], grads['b%d' % (self.num_layers)] = affine_forward(dx_a[self.num_layers], cache_a[self.num_layers])
-
-    for i in reversed(xrange(self.num_layers - 1)):
-      dx_r[i] = relu_backward(dx_a[i], cache_r[i])
-      dx_a[i], grads['W%d' % (i)], grads['b%d' % (i)] = affine_backward(dx_r[i], cache_a[i])
+    # dx_a[self.num_layers-1], grads['W%d' % (self.num_layers)], grads['b%d' % (self.num_layers)] = affine_forward(dx_a[self.num_layers], cache_a[self.num_layers])
+    #
+    # for i in reversed(xrange(self.num_layers - 1)):
+    #   dx_r[i] = relu_backward(dx_a[i], cache_r[i])
+    #   dx_a[i], grads['W%d' % (i)], grads['b%d' % (i)] = affine_backward(dx_r[i], cache_a[i])
 
 
     # dx_a[self.num_layers], dw[self.num_layers], db[self.num_layers] = affine_backward(dout, cache_a[self.num_layers])   #suppsed to be the very first backward propagation
@@ -350,11 +520,26 @@ class FullyConnectedNet(object):
     # ############################################################################
     #                             END OF YOUR CODE                             #
     ############################################################################
-    for i in xrange(self.num_layers):
-      loss += 0.5 * self.reg * (np.sum(self.params['W%d' % (i)]))
+    # for i in xrange(self.num_layers):
+    #   loss += 0.5 * self.reg * (np.sum(self.params['W%d' % (i)]))
 
     ############################################################################
     #                           ACTUAL END OF YOUR CODE                        #
     ############################################################################
 
     return loss, grads
+
+
+def affine_norm_relu_forward(x, w, b, gamma, beta, bn_param):
+  a1, affine_cache = affine_forward(x, w, b)
+  a2, batchnorm_cache = batchnorm_forward(a1, gamma, beta, bn_param)
+  out, relu_cache = relu_forward(a2)
+  cache = (affine_cache, batchnorm_cache, relu_cache)
+  return out, cache
+
+def affine_norm_relu_backward(dout, cache):
+  affine_cache, batchnorm_cache, relu_cache = cache
+  dx2 = relu_backward(dout, relu_cache)
+  dx1, dgamma, dbeta = batchnorm_backward(dx2, batchnorm_cache)
+  dx, dw, db = affine_backward(dx1, affine_cache)
+  return dx, dw, db, dgamma, dbeta
