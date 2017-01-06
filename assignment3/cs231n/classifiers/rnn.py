@@ -135,7 +135,45 @@ class CaptioningRNN(object):
     # defined above to store loss and gradients; grads[k] should give the      #
     # gradients for self.params[k].                                            #
     ############################################################################
-    pass
+    
+    #Forward Pass
+    a1 = np.dot(features, W_proj) + b_proj
+    #print a1.shape
+    a2, cache2 = word_embedding_forward(captions_in, W_embed)
+    #print captions_in.shape
+    if(self.cell_type == "rnn"):
+        a3, cache3 = rnn_forward(a2, a1, Wx, Wh, b)
+    else:
+        a3, cache3 = lstm_forward(a2, a1, Wx, Wh, b)
+
+    a4, cache4 = temporal_affine_forward(a3, W_vocab, b_vocab)
+    loss, dout = temporal_softmax_loss(a4, captions_out, mask)
+
+
+    
+    #Backward Pass
+    grads = dict.fromkeys(self.params)
+    
+    dx, dW_vocab, db_vocab = temporal_affine_backward(dout, cache4)
+    if(self.cell_type == "rnn"):
+        dx, dh0, dWx, dWh, db = rnn_backward(dx, cache3)
+    else:
+        dx, dh0, dWx, dWh, db = lstm_backward(dx, cache3)
+    dW_embed = word_embedding_backward(dx, cache2)
+
+    dW_proj = np.dot(features.T, dh0)
+    db_proj = np.sum(dh0, axis=0)
+
+    grads['W_proj'] = dW_proj
+    grads['b_proj'] = db_proj
+    grads['W_embed'] = dW_embed
+    grads['Wx'] = dWx
+    grads['Wh'] = dWh
+    grads['b'] = db
+    grads['W_vocab'] = dW_vocab
+    grads['b_vocab'] = db_vocab
+
+
     ############################################################################
     #                             END OF YOUR CODE                             #
     ############################################################################
@@ -197,7 +235,35 @@ class CaptioningRNN(object):
     # functions; you'll need to call rnn_step_forward or lstm_step_forward in #
     # a loop.                                                                 #
     ###########################################################################
-    pass
+    #Forward Pass
+    a1 = np.dot(features, W_proj) + b_proj
+
+    captions[:, 0] = self._start
+    prev_h = a1             #previous hidden state
+    prev_c = np.zeros(a1.shape)  # Previous cell state
+    #prev_c = np.zeros_like(h0)  #previous cell state....
+
+    captions_out = self._start * np.ones((N, 1), dtype=np.int32)
+
+    for t in xrange(max_length):    #going over the sequence
+        word_embed, _ = word_embedding_forward(captions_out, W_embed)
+        if (self.cell_type == "rnn"):
+            h, _ = rnn_step_forward(np.squeeze(word_embed), prev_h, Wx, Wh, b)
+        else:
+            h, c, _ = lstm_step_forward(np.squeeze(
+                    word_embed), prev_h, prev_c, Wx, Wh, b)
+
+        #compute scores over dictionary
+        scores, _ = temporal_affine_forward(h[:, np.newaxis,:] , W_vocab, b_vocab)
+
+        idx_best = np.squeeze(np.argmax(scores, axis=2))
+
+        captions[:, t] = idx_best
+
+        #Update hidden state, and current word...
+        prev_h = h
+        captions_out = captions[:, t]
+
     ############################################################################
     #                             END OF YOUR CODE                             #
     ############################################################################
